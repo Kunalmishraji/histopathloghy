@@ -47,8 +47,8 @@ preprocess = transforms.Compose([
 ])
 
 # ---------- MODEL LOADING FROM DRIVE ----------
-file_id = "PASTE_YOUR_FILE_ID_HERE"  # 🔁 <- Replace with your actual model file ID
-gdrive_url = f"https://drive.google.com/uc?id={file_id}"
+file_id = "1Pk69Hl_m7es0VjMIOGLq_E5nVb9ll8IF"  # 🔁 <- Replace with your actual model file ID
+gdrive_url = f"https://drive.google.com/drive/folders/1Pk69Hl_m7es0VjMIOGLq_E5nVb9ll8IF?usp=drive_link"
 model_path = "histo_ViT.pt"
 
 @st.cache_resource
