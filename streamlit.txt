@@ -1,8 +1,1 @@
-streamlit
-torch
-torchvision
-transformers
-Pillow
-gdown
-matplotlib
-numpy
+
