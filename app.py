@@ -1,3 +1,5 @@
+!pip install streamlit.txt
+
 import streamlit as st
 import os
 import torch
