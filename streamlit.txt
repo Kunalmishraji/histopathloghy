@@ -6,4 +6,3 @@ Pillow
 gdown
 matplotlib
 numpy
-
