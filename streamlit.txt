@@ -5,3 +5,4 @@ transformers
 Pillow
 gdown
 matplotlib
+numpy
