@@ -1,36 +1,29 @@
-# app.py
-
+import streamlit as st
 import os
-import numpy as np
 import torch
 import torch.nn as nn
-from transformers import ViTForImageClassification
-from torchvision import transforms
+import numpy as np
 from PIL import Image
-import streamlit as st
+import gdown
+from torchvision import transforms
+from transformers import ViTForImageClassification
 import matplotlib.pyplot as plt
 
-# Set Streamlit page config
-st.set_page_config(page_title="Histopathology ViT Classifier", layout="centered")
-
-# Labels for cancer types
+# ---------- LABELS AND UTILITIES ----------
 labels = ["MC", "EC", "HGSC", "LGSC", "CC"]
 
-# CA-125 interpretation function
 def classify_ca125(ca125_pred):
     if ca125_pred < 35:
         return "<35 U/mL", "Normal or Mild"
     elif 35 <= ca125_pred <= 150:
         return "35–150 U/mL", "Mild to Moderate"
-    elif 20 <= ca125_pred <= 300:
-        return "20–300 U/mL", "Mild to Moderate"
-    elif 50 <= ca125_pred <= 300:
-        return "50–300 U/mL", "Moderate"
-    elif ca125_pred > 100:
+    elif 150 < ca125_pred <= 300:
+        return "150–300 U/mL", "Moderate"
+    elif ca125_pred > 300:
         return "100–5000+ U/mL", "High to Extremely High"
     return "Ambiguous", "Unclassified"
 
-# Custom Multi-Task ViT Model
+# ---------- MODEL DEFINITION ----------
 class MultiTaskViT(nn.Module):
     def __init__(self, base_model):
         super().__init__()
@@ -45,7 +38,7 @@ class MultiTaskViT(nn.Module):
         reg_output = self.reg_head(cls_token)
         return class_logits, reg_output
 
-# Preprocessing for ViT
+# ---------- IMAGE PREPROCESSING ----------
 preprocess = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -53,62 +46,65 @@ preprocess = transforms.Compose([
                          std=[0.229, 0.224, 0.225]),
 ])
 
-# Sidebar - Patient input
-st.sidebar.title("Patient Information")
-patient_name = st.sidebar.text_input("Enter Patient Name")
-uploaded_file = st.sidebar.file_uploader("Upload Histopathology Image", type=["jpg", "jpeg", "png"])
+# ---------- MODEL LOADING FROM DRIVE ----------
+file_id = "PASTE_YOUR_FILE_ID_HERE"  # 🔁 <- Replace with your actual model file ID
+gdrive_url = f"https://drive.google.com/uc?id={file_id}"
+model_path = "histo_ViT.pt"
 
-# Load model
 @st.cache_resource
 def load_model():
+    if not os.path.exists(model_path):
+        with st.spinner("📥 Downloading model from Google Drive..."):
+            gdown.download(gdrive_url, model_path, quiet=False)
+
     base_model = ViTForImageClassification.from_pretrained(
         'google/vit-base-patch16-224',
         num_labels=5,
         ignore_mismatched_sizes=True
     )
     model = MultiTaskViT(base_model)
-    model_path = "histo_ViT.pt"  # Ensure this path is correct in deployment
     state_dict = torch.load(model_path, map_location=torch.device('cpu'))
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     return model
 
-if uploaded_file and patient_name:
+# ---------- STREAMLIT UI ----------
+st.title("🧬 Histopathology Cancer Type & CA-125 Predictor")
+
+# Patient name input
+patient_name = st.text_input("👤 Enter Patient Name")
+
+# Image uploader
+uploaded_file = st.file_uploader("📷 Upload Histopathology Image", type=["jpg", "jpeg", "png"])
+
+# If both inputs provided
+if patient_name and uploaded_file:
     try:
-        img = Image.open(uploaded_file).convert("RGB")
-        img_tensor = preprocess(img).unsqueeze(0)
+        image = Image.open(uploaded_file).convert("RGB")
+        img_tensor = preprocess(image).unsqueeze(0)
 
-        # For plotting
-        img_np = img_tensor.squeeze().numpy().transpose(1, 2, 0)
-        img_np = img_np * np.array([0.229, 0.224, 0.225]) + np.array([0.485, 0.456, 0.406])
-        img_np = np.clip(img_np, 0, 1)
+        # Display input image
+        st.image(image, caption=f"Uploaded by {patient_name}", use_column_width=True)
 
+        # Load model and make prediction
         model = load_model()
         with torch.no_grad():
             class_logits, reg_output = model(img_tensor)
-
             predicted_idx = torch.argmax(class_logits, dim=1).item()
             predicted_label = labels[predicted_idx]
-            ca125_pred = np.exp(reg_output.squeeze().numpy())
-            range_str, class_str = classify_ca125(ca125_pred)
+            ca125_pred = np.exp(reg_output.squeeze().cpu().numpy())
+            range_str, severity = classify_ca125(ca125_pred)
 
-            prediction_text = (
-                f"👤 **Patient Name**: {patient_name}\n\n"
-                f"🧬 **Cancer Type**: {predicted_label} (Pos: {predicted_idx})\n"
-                f"🧪 **CA-125 Level**: {ca125_pred:.2f} U/mL\n"
-                f"📊 **Range**: {range_str}\n"
-                f"🚨 **Severity**: {class_str}"
-            )
-
-            st.image(img_np, caption="Uploaded Histopathology Image", use_column_width=True)
-            st.markdown(prediction_text)
-
+        # Prediction summary
+        st.markdown("### 🧪 Prediction Result")
+        st.success(f"""
+        **Patient Name**: {patient_name}  
+        **Cancer Type**: {predicted_label} (Class ID: {predicted_idx})  
+        **Predicted CA-125**: {ca125_pred:.2f} U/mL  
+        **Range**: {range_str}  
+        **Severity Class**: {severity}
+        """)
     except Exception as e:
-        st.error(f"Error processing image: {e}")
-
-elif uploaded_file and not patient_name:
-    st.warning("Please enter the patient's name.")
-elif patient_name and not uploaded_file:
-    st.warning("Please upload a histopathology image.")
+        st.error(f"❌ Error processing image or model: {e}")
 else:
-    st.info("Please enter patient name and upload an image to get prediction.")
+    st.info("👈 Please enter patient name and upload an image to continue.")
